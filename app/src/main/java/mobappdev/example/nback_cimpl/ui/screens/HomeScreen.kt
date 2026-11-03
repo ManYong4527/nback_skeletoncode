@@ -49,7 +49,8 @@ import mobappdev.example.nback_cimpl.ui.viewmodels.GameViewModel
 
 @Composable
 fun HomeScreen(
-    vm: GameViewModel
+    vm: GameViewModel,
+    onStartClicked: () -> Unit = {},
 ) {
     val highscore by vm.highscore.collectAsState()  // Highscore is its own StateFlow
     val snackBarHostState = remember { SnackbarHostState() }
@@ -80,9 +81,10 @@ fun HomeScreen(
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     // Step 4 will replace this HomeScreen entirely; for now
-                    // just keep the start button so the project compiles.
-                    Button(onClick = vm::startGame) {
-                        Text(text = "Start visual round (debug)")
+                    // the button just navigates — the Game screen owns the
+                    // actual `startGame()` trigger.
+                    Button(onClick = onStartClicked) {
+                        Text(text = "Open game screen (debug)")
                     }
                 }
             }

@@ -34,6 +34,7 @@ interface GameViewModel {
 
     fun setGameType(gameType: GameType)
     fun startGame()
+    fun abortRound()
     fun registerVisualMatch()
     fun registerAudioMatch()
 }
@@ -140,6 +141,31 @@ class GameVM(
         if (!state.isRoundActive || state.isWarmup) return
         if (audioTappedThisTick) return
         audioTappedThisTick = true
+    }
+
+    /**
+     * Cancel an in-flight round without saving high score.
+     *
+     * Called when the player leaves the Game screen mid-round (BackHandler
+     * or the explicit back button). Satisfies the SPEC "round timer is
+     * cancelled cleanly when the user navigates away mid-round" rule.
+     */
+    override fun abortRound() {
+        loopJob?.cancel()
+        loopJob = null
+        _gameState.update {
+            it.copy(
+                isRoundActive = false,
+                isWarmup = false,
+                currentEvent = null,
+                roundIndex = -1,
+            )
+        }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        loopJob?.cancel()
     }
 
     private suspend fun runVisualRound() {
@@ -249,6 +275,7 @@ class FakeVM : GameViewModel {
     override val nBack: Int = 2
     override fun setGameType(gameType: GameType) {}
     override fun startGame() {}
+    override fun abortRound() {}
     override fun registerVisualMatch() {}
     override fun registerAudioMatch() {}
 }
