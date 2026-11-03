@@ -1,23 +1,26 @@
 package mobappdev.example.nback_cimpl.ui.screens
 
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
-import androidx.compose.material3.Icon
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -25,125 +28,209 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
-import mobappdev.example.nback_cimpl.R
 import mobappdev.example.nback_cimpl.ui.viewmodels.FakeVM
+import mobappdev.example.nback_cimpl.ui.viewmodels.GameType
 import mobappdev.example.nback_cimpl.ui.viewmodels.GameViewModel
 
 /**
- * This is the Home screen composable
+ * Home screen.
  *
- * Currently this screen shows the saved highscore
- * It also contains a button which can be used to show that the C-integration works
- * Furthermore it contains two buttons that you can use to start a game
+ * Mandatory SPEC items covered here:
+ *  - High-score readout (DataStore-backed; survives process death).
+ *  - Stimulus-type picker — Visual / Audio / Dual. Audio and Dual are
+ *    shown but disabled this phase; the information architecture is
+ *    final so adding TTS later won't shuffle the layout.
+ *  - Current settings readout: N value, event duration, events per
+ *    round. Sourced from the ViewModel (hard-coded this phase, moves to
+ *    DataStore when the Settings screen lands).
+ *  - START ROUND button routes to the Game screen via [onStartClicked].
  *
- * Date: 25-08-2023
- * Version: Version 1.0
- * Author: Yeetivity
- *
+ * Settings and History text buttons are placeholders — they surface a
+ * "available in next phase" snackbar so the IA for the advanced features
+ * is visible without the screens themselves existing yet.
  */
-
 @Composable
 fun HomeScreen(
     vm: GameViewModel,
     onStartClicked: () -> Unit = {},
 ) {
-    val highscore by vm.highscore.collectAsState()  // Highscore is its own StateFlow
-    val snackBarHostState = remember { SnackbarHostState() }
+    val highscore by vm.highscore.collectAsState()
+    val gameState by vm.gameState.collectAsState()
+    val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
-    Scaffold(
-        snackbarHost = { SnackbarHost(snackBarHostState) }
-    ) {
+    val notYet: (String) -> Unit = { label ->
+        scope.launch { snackbar.showSnackbar("$label will arrive in the next phase.") }
+    }
+
+    Scaffold(snackbarHost = { SnackbarHost(snackbar) }) { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(it),
-            verticalArrangement = Arrangement.Center,
-            horizontalAlignment = Alignment.CenterHorizontally
+                .padding(padding)
+                .padding(horizontal = 24.dp, vertical = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(20.dp),
         ) {
             Text(
-                modifier = Modifier.padding(32.dp),
-                text = "High-Score = $highscore",
-                style = MaterialTheme.typography.headlineLarge
+                text = "N-Back",
+                style = MaterialTheme.typography.displaySmall,
             )
-            // Todo: You'll probably want to change this "BOX" part of the composable
-            Box(
-                modifier = Modifier.weight(1f),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(
-                    Modifier.fillMaxWidth(),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    // Step 4 will replace this HomeScreen entirely; for now
-                    // the button just navigates — the Game screen owns the
-                    // actual `startGame()` trigger.
-                    Button(onClick = onStartClicked) {
-                        Text(text = "Open game screen (debug)")
-                    }
-                }
-            }
-            Text(
-                modifier = Modifier.padding(16.dp),
-                text = "Start Game".uppercase(),
-                style = MaterialTheme.typography.displaySmall
+
+            HighScoreBanner(highscore = highscore)
+
+            SettingsCard(
+                nBack = vm.nBack,
+                eventIntervalMs = vm.eventIntervalMs,
+                totalEvents = vm.totalEvents,
             )
-            Row(
+
+            StimulusTypePicker(
+                selected = gameState.gameType,
+                onPick = vm::setGameType,
+            )
+
+            // Keep START anchored near the bottom even on tall screens.
+            Spacer(modifier = Modifier.weight(1f))
+
+            Button(
+                onClick = onStartClicked,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(16.dp),
-                horizontalArrangement = Arrangement.SpaceAround,
-                verticalAlignment = Alignment.CenterVertically
+                    .heightIn(min = 64.dp),
             ) {
-                Button(onClick = {
-                    // Todo: change this button behaviour
-                    scope.launch {
-                        snackBarHostState.showSnackbar(
-                            message = "Hey! you clicked the audio button"
-                        )
-                    }
-                }) {
-                    Icon(
-                        painter = painterResource(id = R.drawable.sound_on),
-                        contentDescription = "Sound",
-                        modifier = Modifier
-                            .height(48.dp)
-                            .aspectRatio(3f / 2f)
-                    )
-                }
-                Button(
-                    onClick = {
-                        // Todo: change this button behaviour
-                        scope.launch {
-                            snackBarHostState.showSnackbar(
-                                message = "Hey! you clicked the visual button",
-                                duration = SnackbarDuration.Short
-                            )
-                        }
-                    }) {
-                    Icon(
-                        painter = painterResource(id = R.drawable.visual),
-                        contentDescription = "Visual",
-                        modifier = Modifier
-                            .height(48.dp)
-                            .aspectRatio(3f / 2f)
-                    )
-                }
+                Text("START ROUND", style = MaterialTheme.typography.titleLarge)
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                TextButton(
+                    onClick = { notYet("Settings") },
+                    modifier = Modifier.weight(1f),
+                ) { Text("Settings") }
+                TextButton(
+                    onClick = { notYet("Score history") },
+                    modifier = Modifier.weight(1f),
+                ) { Text("History") }
             }
         }
     }
 }
 
+@Composable
+private fun HighScoreBanner(highscore: Int) {
+    Surface(
+        color = MaterialTheme.colorScheme.primaryContainer,
+        shape = RoundedCornerShape(16.dp),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(
+            modifier = Modifier.padding(20.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(
+                text = "HIGH SCORE",
+                style = MaterialTheme.typography.labelLarge,
+            )
+            Text(
+                text = highscore.toString(),
+                style = MaterialTheme.typography.displayMedium,
+                fontWeight = FontWeight.Bold,
+            )
+        }
+    }
+}
+
+@Composable
+private fun SettingsCard(nBack: Int, eventIntervalMs: Long, totalEvents: Int) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text("Current settings", style = MaterialTheme.typography.titleMedium)
+            SettingRow(name = "N", value = nBack.toString())
+            SettingRow(name = "Event duration", value = "$eventIntervalMs ms")
+            SettingRow(name = "Events per round", value = totalEvents.toString())
+        }
+    }
+}
+
+@Composable
+private fun SettingRow(name: String, value: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Text(name, style = MaterialTheme.typography.bodyMedium)
+        Text(value, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+    }
+}
+
+@Composable
+private fun StimulusTypePicker(
+    selected: GameType,
+    onPick: (GameType) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("Stimulus type", style = MaterialTheme.typography.titleMedium)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            StimulusChip(
+                label = "Visual",
+                selected = selected == GameType.Visual,
+                enabled = true,
+                onClick = { onPick(GameType.Visual) },
+                modifier = Modifier.weight(1f),
+            )
+            StimulusChip(
+                label = "Audio",
+                selected = selected == GameType.Audio,
+                enabled = false, // SPEC Path 2: TTS pending.
+                onClick = { onPick(GameType.Audio) },
+                modifier = Modifier.weight(1f),
+            )
+            StimulusChip(
+                label = "Dual",
+                selected = selected == GameType.AudioVisual,
+                enabled = false, // SPEC Path 2.
+                onClick = { onPick(GameType.AudioVisual) },
+                modifier = Modifier.weight(1f),
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun StimulusChip(
+    label: String,
+    selected: Boolean,
+    enabled: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    FilterChip(
+        selected = selected,
+        onClick = onClick,
+        enabled = enabled,
+        label = { Text(label) },
+        modifier = modifier,
+    )
+}
+
 @Preview
 @Composable
-fun HomeScreenPreview() {
-    // Since I am injecting a VM into my homescreen that depends on Application context, the preview doesn't work.
-    Surface(){
-        HomeScreen(FakeVM())
-    }
+private fun HomeScreenPreview() {
+    Surface { HomeScreen(vm = FakeVM(), onStartClicked = {}) }
 }

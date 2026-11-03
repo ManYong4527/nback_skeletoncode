@@ -16,9 +16,10 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import mobappdev.example.nback_cimpl.GameApplication
 import mobappdev.example.nback_cimpl.data.UserPreferencesRepository
+import mobappdev.example.nback_cimpl.domain.ScoringEngine
 import mobappdev.example.nback_cimpl.domain.SequenceGenerator
 import mobappdev.example.nback_cimpl.domain.StimulusEvent
-import kotlin.math.max
+import mobappdev.example.nback_cimpl.domain.TickTapGuard
 
 /**
  * Public surface area for the Game ViewModel.
@@ -31,6 +32,10 @@ interface GameViewModel {
     val score: StateFlow<Int>
     val highscore: StateFlow<Int>
     val nBack: Int
+    /** Number of ticks per round. SPEC: configurable 15..30; Path 1 hard-coded. */
+    val totalEvents: Int
+    /** Time between tick starts, in milliseconds. SPEC: configurable 1000..3000; Path 1 hard-coded. */
+    val eventIntervalMs: Long
 
     fun setGameType(gameType: GameType)
     fun startGame()
@@ -61,14 +66,16 @@ class GameVM(
     override val highscore: StateFlow<Int> = _highscore.asStateFlow()
 
     override val nBack: Int = N_BACK
+    override val totalEvents: Int = TOTAL_EVENTS
+    override val eventIntervalMs: Long = EVENT_INTERVAL_MS
 
     private val sequenceGenerator = SequenceGenerator()
     private var events: List<StimulusEvent> = emptyList()
     private var loopJob: Job? = null
 
     // Reset at the start of every tick; enforces SPEC §2.1 double-press prevention.
-    private var visualTappedThisTick: Boolean = false
-    private var audioTappedThisTick: Boolean = false
+    // Backed by TickTapGuard so the logic is unit-testable without the VM.
+    private val tapGuard = TickTapGuard()
 
     override fun setGameType(gameType: GameType) {
         _gameState.update { it.copy(gameType = gameType) }
@@ -114,8 +121,7 @@ class GameVM(
     override fun registerVisualMatch() {
         val state = _gameState.value
         if (!state.isRoundActive || state.isWarmup) return
-        if (visualTappedThisTick) return
-        visualTappedThisTick = true
+        if (!tapGuard.acceptVisual()) return
 
         val i = state.roundIndex
         if (i < nBack) return // defensive — isWarmup normally traps this
@@ -139,8 +145,7 @@ class GameVM(
         // same guards so UI callers behave identically once audio lands.
         val state = _gameState.value
         if (!state.isRoundActive || state.isWarmup) return
-        if (audioTappedThisTick) return
-        audioTappedThisTick = true
+        if (!tapGuard.acceptAudio()) return
     }
 
     /**
@@ -173,8 +178,7 @@ class GameVM(
         val gapMs = EVENT_INTERVAL_MS - visibleMs
 
         for (i in events.indices) {
-            visualTappedThisTick = false
-            audioTappedThisTick = false
+            tapGuard.resetForNewTick()
 
             _gameState.update {
                 it.copy(
@@ -191,7 +195,7 @@ class GameVM(
             if (i >= nBack) {
                 val wasVisualMatch =
                     events[i].visualIndex == events[i - nBack].visualIndex
-                if (wasVisualMatch && !visualTappedThisTick) {
+                if (wasVisualMatch && !tapGuard.visualWasTapped) {
                     _gameState.update { it.copy(misses = it.misses + 1) }
                 }
             }
@@ -210,10 +214,10 @@ class GameVM(
         }
     }
 
-    /** SPEC §2.1 scoring formula: `max(0, hits * 10 - falseAlarms * 5)`. */
+    /** Delegates to [ScoringEngine] so the formula lives in one testable place. */
     private fun recomputeScore() {
         val s = _gameState.value
-        _score.value = max(0, s.hits * 10 - s.falseAlarms * 5)
+        _score.value = ScoringEngine.scoreOf(hits = s.hits, falseAlarms = s.falseAlarms)
     }
 
     companion object {
@@ -273,6 +277,8 @@ class FakeVM : GameViewModel {
     override val score: StateFlow<Int> = MutableStateFlow(0).asStateFlow()
     override val highscore: StateFlow<Int> = MutableStateFlow(42).asStateFlow()
     override val nBack: Int = 2
+    override val totalEvents: Int = 20
+    override val eventIntervalMs: Long = 2000L
     override fun setGameType(gameType: GameType) {}
     override fun startGame() {}
     override fun abortRound() {}
