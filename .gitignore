@@ -1,0 +1,11 @@
+# Gradle daemon state, caches, and lock files — dirtied on every build/test run.
+.gradle/
+
+# Root-level build outputs. (app/build is already ignored by app/.gitignore.)
+/build/
+
+# Kotlin incremental compiler state produced by Gradle test runs.
+.kotlin/
+
+# Native build cache from externalNativeBuild (CMake).
+.cxx/
