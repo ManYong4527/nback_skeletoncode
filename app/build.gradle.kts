@@ -47,12 +47,18 @@ android {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
     }
-    externalNativeBuild {
-        cmake {
-            path = file("src/main/cpp/CMakeLists.txt")
-            version = "3.22.1"
-        }
-    }
+    // Disabled 2026-11: the native sequence generator was replaced by the
+    // pure-Kotlin SequenceGenerator (see domain/SequenceGenerator.kt). The C
+    // source under src/main/cpp/ stays on disk as a historical reference, but
+    // we no longer produce a .so for it — this also removes the 16KB-page
+    // alignment warning on Android 15+ devices.
+    //
+    // externalNativeBuild {
+    //     cmake {
+    //         path = file("src/main/cpp/CMakeLists.txt")
+    //         version = "3.22.1"
+    //     }
+    // }
 }
 
 dependencies {
