@@ -57,9 +57,11 @@ import mobappdev.example.nback_cimpl.ui.viewmodels.GameViewModel
 fun HomeScreen(
     vm: GameViewModel,
     onStartClicked: () -> Unit = {},
+    onSettingsClicked: () -> Unit = {},
 ) {
     val highscore by vm.highscore.collectAsState()
     val gameState by vm.gameState.collectAsState()
+    val settings by vm.settings.collectAsState()
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
@@ -83,9 +85,9 @@ fun HomeScreen(
             HighScoreBanner(highscore = highscore)
 
             SettingsCard(
-                nBack = vm.nBack,
-                eventIntervalMs = vm.eventIntervalMs,
-                totalEvents = vm.totalEvents,
+                nBack = settings.nBack,
+                eventIntervalMs = settings.eventDurationMs,
+                totalEvents = settings.eventsPerRound,
             )
 
             StimulusTypePicker(
@@ -110,7 +112,7 @@ fun HomeScreen(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 TextButton(
-                    onClick = { notYet("Settings") },
+                    onClick = onSettingsClicked,
                     modifier = Modifier.weight(1f),
                 ) { Text("Settings") }
                 TextButton(

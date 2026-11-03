@@ -13,6 +13,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import mobappdev.example.nback_cimpl.ui.screens.GameScreen
 import mobappdev.example.nback_cimpl.ui.screens.HomeScreen
+import mobappdev.example.nback_cimpl.ui.screens.SettingsScreen
 import mobappdev.example.nback_cimpl.ui.theme.NBack_CImplTheme
 import mobappdev.example.nback_cimpl.ui.viewmodels.GameVM
 
@@ -46,10 +47,17 @@ class MainActivity : ComponentActivity() {
                             HomeScreen(
                                 vm = gameViewModel,
                                 onStartClicked = { navController.navigate(ROUTE_GAME) },
+                                onSettingsClicked = { navController.navigate(ROUTE_SETTINGS) },
                             )
                         }
                         composable(ROUTE_GAME) {
                             GameScreen(
+                                vm = gameViewModel,
+                                onBack = { navController.popBackStack() },
+                            )
+                        }
+                        composable(ROUTE_SETTINGS) {
+                            SettingsScreen(
                                 vm = gameViewModel,
                                 onBack = { navController.popBackStack() },
                             )
@@ -63,5 +71,6 @@ class MainActivity : ComponentActivity() {
     private companion object {
         const val ROUTE_HOME = "home"
         const val ROUTE_GAME = "game"
+        const val ROUTE_SETTINGS = "settings"
     }
 }

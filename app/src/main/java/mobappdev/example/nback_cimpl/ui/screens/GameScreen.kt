@@ -69,6 +69,7 @@ fun GameScreen(
 ) {
     val state by vm.gameState.collectAsState()
     val score by vm.score.collectAsState()
+    val settings by vm.settings.collectAsState()
 
     val leaveScreen = {
         vm.abortRound()
@@ -91,7 +92,7 @@ fun GameScreen(
                 TextButton(onClick = leaveScreen) { Text("← Back") }
             }
 
-            LiveStatsStrip(state = state, score = score, nBack = vm.nBack)
+            LiveStatsStrip(state = state, score = score, nBack = settings.nBack)
             WarmupBanner(visible = state.isWarmup && state.isRoundActive)
 
             Box(
@@ -100,7 +101,7 @@ fun GameScreen(
                     .weight(1f),
                 contentAlignment = Alignment.Center,
             ) {
-                VisualGrid(state = state)
+                VisualGrid(state = state, gridSize = settings.gridSize)
             }
 
             BottomActionBar(
@@ -157,10 +158,10 @@ private fun WarmupBanner(visible: Boolean) {
     }
 }
 
-/** 3×3 grid, 1:1 aspect, highlights the cell whose index == current visualIndex. */
+/** M×M grid, 1:1 aspect, highlights the cell whose index == current visualIndex. */
 @Composable
-private fun VisualGrid(state: GameState) {
-    val side = 3
+private fun VisualGrid(state: GameState, gridSize: Int) {
+    val side = gridSize
     Column(
         modifier = Modifier
             .fillMaxWidth()

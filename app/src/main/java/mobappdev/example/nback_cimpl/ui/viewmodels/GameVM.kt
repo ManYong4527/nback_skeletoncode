@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import mobappdev.example.nback_cimpl.GameApplication
 import mobappdev.example.nback_cimpl.data.UserPreferencesRepository
+import mobappdev.example.nback_cimpl.domain.GameSettings
 import mobappdev.example.nback_cimpl.domain.ScoringEngine
 import mobappdev.example.nback_cimpl.domain.SequenceGenerator
 import mobappdev.example.nback_cimpl.domain.StimulusEvent
@@ -31,17 +32,20 @@ interface GameViewModel {
     val gameState: StateFlow<GameState>
     val score: StateFlow<Int>
     val highscore: StateFlow<Int>
-    val nBack: Int
-    /** Number of ticks per round. SPEC: configurable 15..30; Path 1 hard-coded. */
-    val totalEvents: Int
-    /** Time between tick starts, in milliseconds. SPEC: configurable 1000..3000; Path 1 hard-coded. */
-    val eventIntervalMs: Long
+    /**
+     * Current player-configurable round parameters. Updating via
+     * [saveSettings] writes through to DataStore; this StateFlow
+     * mirrors what's persisted. In-flight rounds use the snapshot
+     * taken at [startGame] time and are not disrupted mid-tick.
+     */
+    val settings: StateFlow<GameSettings>
 
     fun setGameType(gameType: GameType)
     fun startGame()
     fun abortRound()
     fun registerVisualMatch()
     fun registerAudioMatch()
+    fun saveSettings(settings: GameSettings)
 }
 
 /**
@@ -65,9 +69,15 @@ class GameVM(
     private val _highscore = MutableStateFlow(0)
     override val highscore: StateFlow<Int> = _highscore.asStateFlow()
 
-    override val nBack: Int = N_BACK
-    override val totalEvents: Int = TOTAL_EVENTS
-    override val eventIntervalMs: Long = EVENT_INTERVAL_MS
+    private val _settings = MutableStateFlow(GameSettings())
+    override val settings: StateFlow<GameSettings> = _settings.asStateFlow()
+
+    /**
+     * Snapshot of [settings] captured at [startGame]. Mutating settings
+     * mid-round does NOT retune the loop; the next round uses the newer
+     * values. Keeps round semantics predictable.
+     */
+    private var activeSettings: GameSettings = GameSettings()
 
     private val sequenceGenerator = SequenceGenerator()
     private var events: List<StimulusEvent> = emptyList()
@@ -91,11 +101,15 @@ class GameVM(
             return
         }
 
+        // Freeze the player's current settings for the duration of this
+        // round so slider changes made mid-round can't desync events.
+        activeSettings = _settings.value
+
         events = sequenceGenerator.generate(
-            totalEvents = TOTAL_EVENTS,
-            nBack = nBack,
-            gridSize = GRID_SIZE,
-            letters = LETTERS,
+            totalEvents = activeSettings.eventsPerRound,
+            nBack = activeSettings.nBack,
+            gridSize = activeSettings.gridSize,
+            letters = activeSettings.letters,
         )
         Log.d(TAG, "Generated ${events.size} events: $events")
 
@@ -118,15 +132,22 @@ class GameVM(
         loopJob = viewModelScope.launch { runVisualRound() }
     }
 
+    override fun saveSettings(settings: GameSettings) {
+        viewModelScope.launch {
+            userPreferencesRepository.saveSettings(settings)
+        }
+    }
+
     override fun registerVisualMatch() {
         val state = _gameState.value
         if (!state.isRoundActive || state.isWarmup) return
         if (!tapGuard.acceptVisual()) return
 
+        val n = activeSettings.nBack
         val i = state.roundIndex
-        if (i < nBack) return // defensive — isWarmup normally traps this
+        if (i < n) return // defensive — isWarmup normally traps this
 
-        val isMatch = events[i].visualIndex == events[i - nBack].visualIndex
+        val isMatch = events[i].visualIndex == events[i - n].visualIndex
         if (isMatch) {
             _gameState.update { it.copy(hits = it.hits + 1) }
         } else {
@@ -174,8 +195,10 @@ class GameVM(
     }
 
     private suspend fun runVisualRound() {
-        val visibleMs = (EVENT_INTERVAL_MS * STIMULUS_VISIBLE_FRACTION).toLong()
-        val gapMs = EVENT_INTERVAL_MS - visibleMs
+        val tickMs = activeSettings.eventDurationMs
+        val n = activeSettings.nBack
+        val visibleMs = (tickMs * STIMULUS_VISIBLE_FRACTION).toLong()
+        val gapMs = tickMs - visibleMs
 
         for (i in events.indices) {
             tapGuard.resetForNewTick()
@@ -184,7 +207,7 @@ class GameVM(
                 it.copy(
                     roundIndex = i,
                     currentEvent = events[i],
-                    isWarmup = i < nBack,
+                    isWarmup = i < n,
                 )
             }
             delay(visibleMs)
@@ -192,9 +215,9 @@ class GameVM(
             _gameState.update { it.copy(currentEvent = null) }
 
             // SPEC §2.1 "Misses": a real match the user never registered.
-            if (i >= nBack) {
+            if (i >= n) {
                 val wasVisualMatch =
-                    events[i].visualIndex == events[i - nBack].visualIndex
+                    events[i].visualIndex == events[i - n].visualIndex
                 if (wasVisualMatch && !tapGuard.visualWasTapped) {
                     _gameState.update { it.copy(misses = it.misses + 1) }
                 }
@@ -222,12 +245,7 @@ class GameVM(
 
     companion object {
         private const val TAG = "GameVM"
-        private const val N_BACK = 2
-        private const val TOTAL_EVENTS = 20
-        private const val GRID_SIZE = 3
-        private const val EVENT_INTERVAL_MS: Long = 2000L
         private const val STIMULUS_VISIBLE_FRACTION: Double = 0.70
-        private val LETTERS = listOf('C', 'D', 'G', 'K', 'P', 'T', 'V')
 
         val Factory: ViewModelProvider.Factory = viewModelFactory {
             initializer {
@@ -241,6 +259,17 @@ class GameVM(
         viewModelScope.launch {
             userPreferencesRepository.highscore.collect {
                 _highscore.value = it
+            }
+        }
+        viewModelScope.launch {
+            userPreferencesRepository.settings.collect { incoming ->
+                _settings.value = incoming
+                // Keep activeSettings in sync while no round is running so
+                // the first startGame() after a settings change picks up
+                // the new values without delay.
+                if (!_gameState.value.isRoundActive) {
+                    activeSettings = incoming
+                }
             }
         }
     }
@@ -276,12 +305,12 @@ class FakeVM : GameViewModel {
         MutableStateFlow(GameState()).asStateFlow()
     override val score: StateFlow<Int> = MutableStateFlow(0).asStateFlow()
     override val highscore: StateFlow<Int> = MutableStateFlow(42).asStateFlow()
-    override val nBack: Int = 2
-    override val totalEvents: Int = 20
-    override val eventIntervalMs: Long = 2000L
+    override val settings: StateFlow<GameSettings> =
+        MutableStateFlow(GameSettings()).asStateFlow()
     override fun setGameType(gameType: GameType) {}
     override fun startGame() {}
     override fun abortRound() {}
     override fun registerVisualMatch() {}
     override fun registerAudioMatch() {}
+    override fun saveSettings(settings: GameSettings) {}
 }

@@ -6,50 +6,83 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
+import mobappdev.example.nback_cimpl.domain.GameSettings
 import java.io.IOException
 
 /**
- * This repository provides a way to interact with the DataStore api,
- * with this API you can save key:value pairs
+ * DataStore-backed persistence for both the high score and the player's
+ * [GameSettings]. Sharing one DataStore file keeps the backing Prefs
+ * atomic across settings changes and avoids multi-file race conditions.
  *
- * Currently this file contains only one thing: getting the highscore as a flow
- * and writing to the highscore preference.
- * (a flow is like a waterpipe; if you put something different in the start,
- * the end automatically updates as long as the pipe is open)
+ * All reads emit via [Flow] so the UI (Home card, Settings sliders) and
+ * the ViewModel stay reactive — change a slider, the Home readout
+ * updates without any explicit refresh.
  *
- * Date: 25-08-2023
- * Version: Skeleton code version 1.0
- * Author: Yeetivity
- *
+ * Writes are suspend functions dispatched on the DataStore's internal
+ * IO executor; callers should launch them on [kotlinx.coroutines.Dispatchers.IO]
+ * per STYLE.md §3 ("DataStore operations strictly on Dispatchers.IO").
  */
-
-class UserPreferencesRepository (
-    private val dataStore: DataStore<Preferences>
-){
+class UserPreferencesRepository(
+    private val dataStore: DataStore<Preferences>,
+) {
     private companion object {
-        val HIGHSCORE = intPreferencesKey("highscore")
         const val TAG = "UserPreferencesRepo"
+
+        val HIGHSCORE = intPreferencesKey("highscore")
+        val N_BACK = intPreferencesKey("n_back")
+        val EVENT_DURATION_MS = longPreferencesKey("event_duration_ms")
+        val EVENTS_PER_ROUND = intPreferencesKey("events_per_round")
+        val GRID_SIZE = intPreferencesKey("grid_size")
+        val LETTER_COUNT = intPreferencesKey("letter_count")
     }
 
-    val highscore: Flow<Int> = dataStore.data
-        .catch {
-            if (it is IOException) {
-                Log.e(TAG, "Error reading preferences", it)
-                emit(emptyPreferences())
-            } else {
-                throw it
-            }
+    /** Guard every DataStore read against transient IO exceptions. */
+    private val prefs: Flow<Preferences> = dataStore.data.catch {
+        if (it is IOException) {
+            Log.e(TAG, "Error reading preferences", it)
+            emit(emptyPreferences())
+        } else {
+            throw it
         }
-        .map { preferences ->
-            preferences[HIGHSCORE] ?: 0
-        }
+    }
+
+    val highscore: Flow<Int> = prefs.map { it[HIGHSCORE] ?: 0 }
+
+    /**
+     * Current [GameSettings] snapshot. Missing keys fall back to the
+     * data-class defaults, and every value passes through
+     * [GameSettings.sanitize] so an out-of-range value in storage (older
+     * build, future downgrade) cannot push the engine out of SPEC.
+     */
+    val settings: Flow<GameSettings> = prefs.map { p ->
+        val defaults = GameSettings()
+        GameSettings.sanitize(
+            GameSettings(
+                nBack = p[N_BACK] ?: defaults.nBack,
+                eventDurationMs = p[EVENT_DURATION_MS] ?: defaults.eventDurationMs,
+                eventsPerRound = p[EVENTS_PER_ROUND] ?: defaults.eventsPerRound,
+                gridSize = p[GRID_SIZE] ?: defaults.gridSize,
+                letterCount = p[LETTER_COUNT] ?: defaults.letterCount,
+            )
+        )
+    }
 
     suspend fun saveHighScore(score: Int) {
-        dataStore.edit { preferences ->
-            preferences[HIGHSCORE] = score
+        dataStore.edit { it[HIGHSCORE] = score }
+    }
+
+    suspend fun saveSettings(settings: GameSettings) {
+        val sanitized = GameSettings.sanitize(settings)
+        dataStore.edit { p ->
+            p[N_BACK] = sanitized.nBack
+            p[EVENT_DURATION_MS] = sanitized.eventDurationMs
+            p[EVENTS_PER_ROUND] = sanitized.eventsPerRound
+            p[GRID_SIZE] = sanitized.gridSize
+            p[LETTER_COUNT] = sanitized.letterCount
         }
     }
 }
