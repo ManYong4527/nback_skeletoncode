@@ -9,7 +9,7 @@ set "JAVA_HOME=C:\Users\45274\.jdks\jbr-17.0.14"
 set "PATH=%JAVA_HOME%\bin;%PATH%"
 
 pushd "%~dp0"
-call gradlew.bat :app:testDebugUnitTest --console=plain %*
+call "%~dp0gradlew.bat" :app:testDebugUnitTest --console=plain %*
 set "EXIT_CODE=%ERRORLEVEL%"
 popd
 

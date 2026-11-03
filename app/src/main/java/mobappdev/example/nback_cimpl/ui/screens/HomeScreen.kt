@@ -52,7 +52,6 @@ fun HomeScreen(
     vm: GameViewModel
 ) {
     val highscore by vm.highscore.collectAsState()  // Highscore is its own StateFlow
-    val gameState by vm.gameState.collectAsState()
     val snackBarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
@@ -80,15 +79,10 @@ fun HomeScreen(
                     Modifier.fillMaxWidth(),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    if (gameState.eventValue != -1) {
-                        Text(
-                            modifier = Modifier.fillMaxWidth(),
-                            text = "Current eventValue is: ${gameState.eventValue}",
-                            textAlign = TextAlign.Center
-                        )
-                    }
+                    // Step 4 will replace this HomeScreen entirely; for now
+                    // just keep the start button so the project compiles.
                     Button(onClick = vm::startGame) {
-                        Text(text = "Generate eventValues")
+                        Text(text = "Start visual round (debug)")
                     }
                 }
             }
