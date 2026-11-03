@@ -1,5 +1,6 @@
 package mobappdev.example.nback_cimpl.domain
 
+import kotlin.math.roundToInt
 import kotlin.random.Random
 
 /**
@@ -48,6 +49,69 @@ class SequenceGenerator(
         letters: List<Char>,
         targetMatchRate: Double = 0.30,
     ): List<StimulusEvent> {
-        TODO("Step 2: implement constructive generation")
+        require(nBack >= 1) { "nBack must be >= 1, was $nBack" }
+        require(totalEvents > nBack) {
+            "totalEvents ($totalEvents) must exceed nBack ($nBack) so some ticks are matchable"
+        }
+        require(gridSize >= 2) {
+            "gridSize must be >= 2 so non-match ticks can differ from events[i - nBack], was $gridSize"
+        }
+        require(letters.size >= 2) {
+            "letters must contain at least 2 symbols, had ${letters.size}"
+        }
+        require(letters.toSet().size == letters.size) { "letters must be distinct" }
+        require(targetMatchRate in 0.0..1.0) {
+            "targetMatchRate must be in [0.0, 1.0], was $targetMatchRate"
+        }
+
+        val visualPool: List<Int> = (0 until gridSize * gridSize).toList()
+        val visualStream = buildStream(totalEvents, nBack, visualPool, targetMatchRate)
+        val letterStream = buildStream(totalEvents, nBack, letters, targetMatchRate)
+
+        return List(totalEvents) { i ->
+            StimulusEvent(visualIndex = visualStream[i], letter = letterStream[i])
+        }
+    }
+
+    /**
+     * Build one modality's stream with an exact, pre-planned number of
+     * N-back matches.
+     *
+     * The first [nBack] ticks are drawn freely from [valuePool]; they can
+     * never be N-back matches because index `i - nBack` is negative.
+     * The remaining `length - nBack` indices form the matchable window;
+     * we pick `round(window * targetMatchRate)` of them up-front as planned
+     * matches and copy from `i - nBack`. All other indices in the window
+     * pick a value *excluding* `values[i - nBack]` so no accidental match
+     * can inflate the rate.
+     */
+    private fun <T> buildStream(
+        length: Int,
+        nBack: Int,
+        valuePool: List<T>,
+        targetMatchRate: Double,
+    ): List<T> {
+        val matchableCount = length - nBack
+        val plannedMatchCount = (matchableCount * targetMatchRate).roundToInt()
+            .coerceIn(0, matchableCount)
+        val plannedMatches: Set<Int> = (nBack until length)
+            .shuffled(random)
+            .take(plannedMatchCount)
+            .toSet()
+
+        val result = ArrayList<T>(length)
+        for (i in 0 until length) {
+            val value: T = when {
+                i < nBack -> valuePool.random(random)
+                i in plannedMatches -> result[i - nBack]
+                else -> {
+                    val forbidden = result[i - nBack]
+                    val candidates = valuePool.filter { it != forbidden }
+                    candidates.random(random)
+                }
+            }
+            result.add(value)
+        }
+        return result
     }
 }
