@@ -9,3 +9,6 @@
 
 # Native build cache from externalNativeBuild (CMake).
 .cxx/
+
+# IntelliJ / Android Studio project files — per-user, regenerated on sync.
+.idea/
