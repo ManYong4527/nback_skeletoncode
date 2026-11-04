@@ -5,36 +5,31 @@ import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.preferencesDataStore
+import mobappdev.example.nback_cimpl.data.AppDatabase
+import mobappdev.example.nback_cimpl.data.ScoreHistoryRepository
 import mobappdev.example.nback_cimpl.data.UserPreferencesRepository
 
 /**
- * This is the Main Application
+ * Manual DI root.
  *
- * Often your app doesn't even need this (custom) class, since the default
- * Application() class is enough. However, since we want to use DataStore for
- * saving the highscore, we create a custom version that inherits from the default
- * Application class.
- *
- *
- * Date: 25-08-2023
- * Version: Version 1.0
- * Author: Yeetivity
- *
+ * Holds the one DataStore (preferences + settings) and the one Room
+ * database so both repositories draw from singletons that match the
+ * Application lifecycle.
  */
-
 private const val APP_PREFERENCES_NAME = "game_preferences"
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(
     name = APP_PREFERENCES_NAME
 )
 
-/*
-* Custom app entry point for manual dependency injection
- */
-class GameApplication: Application() {
+class GameApplication : Application() {
     lateinit var userPreferencesRespository: UserPreferencesRepository
+    lateinit var scoreHistoryRepository: ScoreHistoryRepository
 
     override fun onCreate() {
         super.onCreate()
         userPreferencesRespository = UserPreferencesRepository(dataStore)
+        scoreHistoryRepository = ScoreHistoryRepository(
+            AppDatabase.get(this).scoreDao()
+        )
     }
 }

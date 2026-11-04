@@ -12,10 +12,12 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import mobappdev.example.nback_cimpl.ui.screens.GameScreen
+import mobappdev.example.nback_cimpl.ui.screens.HistoryScreen
 import mobappdev.example.nback_cimpl.ui.screens.HomeScreen
 import mobappdev.example.nback_cimpl.ui.screens.SettingsScreen
 import mobappdev.example.nback_cimpl.ui.theme.NBack_CImplTheme
 import mobappdev.example.nback_cimpl.ui.viewmodels.GameVM
+import mobappdev.example.nback_cimpl.ui.viewmodels.HistoryVM
 
 /**
  * App entry point.
@@ -38,6 +40,13 @@ class MainActivity : ComponentActivity() {
                 ) {
                     val navController = rememberNavController()
                     val gameViewModel: GameVM = viewModel(factory = GameVM.Factory)
+                    // Activity-scoped on purpose: navigation-compose 2.4.0 does
+                    // NOT include APPLICATION_KEY in the per-backstack-entry
+                    // extras, so constructing HistoryVM inside its route
+                    // composable would crash on `this[APPLICATION_KEY] as
+                    // GameApplication`. Hoisting here reuses the Activity's
+                    // extras which do include it.
+                    val historyViewModel: HistoryVM = viewModel(factory = HistoryVM.Factory)
 
                     NavHost(
                         navController = navController,
@@ -48,6 +57,7 @@ class MainActivity : ComponentActivity() {
                                 vm = gameViewModel,
                                 onStartClicked = { navController.navigate(ROUTE_GAME) },
                                 onSettingsClicked = { navController.navigate(ROUTE_SETTINGS) },
+                                onHistoryClicked = { navController.navigate(ROUTE_HISTORY) },
                             )
                         }
                         composable(ROUTE_GAME) {
@@ -62,6 +72,12 @@ class MainActivity : ComponentActivity() {
                                 onBack = { navController.popBackStack() },
                             )
                         }
+                        composable(ROUTE_HISTORY) {
+                            HistoryScreen(
+                                vm = historyViewModel,
+                                onBack = { navController.popBackStack() },
+                            )
+                        }
                     }
                 }
             }
@@ -72,5 +88,6 @@ class MainActivity : ComponentActivity() {
         const val ROUTE_HOME = "home"
         const val ROUTE_GAME = "game"
         const val ROUTE_SETTINGS = "settings"
+        const val ROUTE_HISTORY = "history"
     }
 }

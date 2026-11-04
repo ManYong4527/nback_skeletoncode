@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import mobappdev.example.nback_cimpl.GameApplication
+import mobappdev.example.nback_cimpl.data.ScoreHistoryRepository
 import mobappdev.example.nback_cimpl.data.UserPreferencesRepository
 import mobappdev.example.nback_cimpl.domain.GameSettings
 import mobappdev.example.nback_cimpl.domain.ScoringEngine
@@ -39,6 +40,12 @@ interface GameViewModel {
      * taken at [startGame] time and are not disrupted mid-tick.
      */
     val settings: StateFlow<GameSettings>
+    /**
+     * Non-null only in the moment between a completed round and the
+     * player answering the name-entry prompt. UI observes this to show
+     * the dialog; VM clears it once the player commits or dismisses.
+     */
+    val pendingSave: StateFlow<PendingSave?>
 
     fun setGameType(gameType: GameType)
     fun startGame()
@@ -46,7 +53,12 @@ interface GameViewModel {
     fun registerVisualMatch()
     fun registerAudioMatch()
     fun saveSettings(settings: GameSettings)
+    fun commitPendingSave(playerName: String)
+    fun discardPendingSave()
 }
+
+/** The round result waiting on a player name before we write it to Room. */
+data class PendingSave(val score: Int, val nValue: Int)
 
 /**
  * Owns the Dual N-Back round's timer, sequence, and scoring state.
@@ -58,6 +70,7 @@ interface GameViewModel {
  */
 class GameVM(
     private val userPreferencesRepository: UserPreferencesRepository,
+    private val scoreHistoryRepository: ScoreHistoryRepository,
 ) : GameViewModel, ViewModel() {
 
     private val _gameState = MutableStateFlow(GameState())
@@ -71,6 +84,9 @@ class GameVM(
 
     private val _settings = MutableStateFlow(GameSettings())
     override val settings: StateFlow<GameSettings> = _settings.asStateFlow()
+
+    private val _pendingSave = MutableStateFlow<PendingSave?>(null)
+    override val pendingSave: StateFlow<PendingSave?> = _pendingSave.asStateFlow()
 
     /**
      * Snapshot of [settings] captured at [startGame]. Mutating settings
@@ -235,6 +251,29 @@ class GameVM(
                 userPreferencesRepository.saveHighScore(finalScore)
             }
         }
+        // SPEC §3.2: "Player inputs name upon game completion." Set
+        // pendingSave for any completed round (aborted rounds skip this).
+        _pendingSave.value = PendingSave(
+            score = finalScore,
+            nValue = activeSettings.nBack,
+        )
+    }
+
+    override fun commitPendingSave(playerName: String) {
+        val pending = _pendingSave.value ?: return
+        val name = playerName.trim().ifEmpty { "Anonymous" }
+        viewModelScope.launch {
+            scoreHistoryRepository.recordScore(
+                playerName = name,
+                score = pending.score,
+                nValue = pending.nValue,
+            )
+            _pendingSave.value = null
+        }
+    }
+
+    override fun discardPendingSave() {
+        _pendingSave.value = null
     }
 
     /** Delegates to [ScoringEngine] so the formula lives in one testable place. */
@@ -250,7 +289,10 @@ class GameVM(
         val Factory: ViewModelProvider.Factory = viewModelFactory {
             initializer {
                 val application = (this[APPLICATION_KEY] as GameApplication)
-                GameVM(application.userPreferencesRespository)
+                GameVM(
+                    userPreferencesRepository = application.userPreferencesRespository,
+                    scoreHistoryRepository = application.scoreHistoryRepository,
+                )
             }
         }
     }
@@ -307,10 +349,14 @@ class FakeVM : GameViewModel {
     override val highscore: StateFlow<Int> = MutableStateFlow(42).asStateFlow()
     override val settings: StateFlow<GameSettings> =
         MutableStateFlow(GameSettings()).asStateFlow()
+    override val pendingSave: StateFlow<PendingSave?> =
+        MutableStateFlow<PendingSave?>(null).asStateFlow()
     override fun setGameType(gameType: GameType) {}
     override fun startGame() {}
     override fun abortRound() {}
     override fun registerVisualMatch() {}
     override fun registerAudioMatch() {}
     override fun saveSettings(settings: GameSettings) {}
+    override fun commitPendingSave(playerName: String) {}
+    override fun discardPendingSave() {}
 }

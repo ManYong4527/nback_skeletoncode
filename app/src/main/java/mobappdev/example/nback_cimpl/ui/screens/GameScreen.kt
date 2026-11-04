@@ -17,9 +17,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -42,6 +45,7 @@ import kotlinx.coroutines.delay
 import mobappdev.example.nback_cimpl.ui.viewmodels.FakeVM
 import mobappdev.example.nback_cimpl.ui.viewmodels.GameState
 import mobappdev.example.nback_cimpl.ui.viewmodels.GameViewModel
+import mobappdev.example.nback_cimpl.ui.viewmodels.PendingSave
 
 /**
  * Layout A — Grid-first Dual N-Back game surface.
@@ -70,12 +74,21 @@ fun GameScreen(
     val state by vm.gameState.collectAsState()
     val score by vm.score.collectAsState()
     val settings by vm.settings.collectAsState()
+    val pendingSave by vm.pendingSave.collectAsState()
 
     val leaveScreen = {
         vm.abortRound()
         onBack()
     }
     BackHandler(onBack = leaveScreen)
+
+    pendingSave?.let { pending ->
+        SaveRoundDialog(
+            pending = pending,
+            onConfirm = { name -> vm.commitPendingSave(name) },
+            onDismiss = { vm.discardPendingSave() },
+        )
+    }
 
     Scaffold { padding ->
         Column(
@@ -327,6 +340,51 @@ private fun MatchButton(
             }
         }
     }
+}
+
+/**
+ * Round-end name-entry prompt. SPEC §3.2: "Player inputs name upon
+ * game completion."
+ *
+ * "Skip" discards without writing to Room — equivalent to anonymous
+ * play; "Save" writes a trimmed name (defaults to "Anonymous" on empty
+ * input inside the VM, so an eager tap still produces a visible row).
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SaveRoundDialog(
+    pending: PendingSave,
+    onConfirm: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var name by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Round complete") },
+        text = {
+            Column {
+                Text(
+                    "Score: ${pending.score}   •   N = ${pending.nValue}",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Your name") },
+                    singleLine = true,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 12.dp),
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onConfirm(name) }) { Text("Save") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Skip") }
+        },
+    )
 }
 
 @Preview

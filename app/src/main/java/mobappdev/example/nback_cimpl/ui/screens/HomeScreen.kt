@@ -16,22 +16,17 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.launch
 import mobappdev.example.nback_cimpl.ui.viewmodels.FakeVM
 import mobappdev.example.nback_cimpl.ui.viewmodels.GameType
 import mobappdev.example.nback_cimpl.ui.viewmodels.GameViewModel
@@ -58,18 +53,13 @@ fun HomeScreen(
     vm: GameViewModel,
     onStartClicked: () -> Unit = {},
     onSettingsClicked: () -> Unit = {},
+    onHistoryClicked: () -> Unit = {},
 ) {
     val highscore by vm.highscore.collectAsState()
     val gameState by vm.gameState.collectAsState()
     val settings by vm.settings.collectAsState()
-    val snackbar = remember { SnackbarHostState() }
-    val scope = rememberCoroutineScope()
 
-    val notYet: (String) -> Unit = { label ->
-        scope.launch { snackbar.showSnackbar("$label will arrive in the next phase.") }
-    }
-
-    Scaffold(snackbarHost = { SnackbarHost(snackbar) }) { padding ->
+    Scaffold { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -116,7 +106,7 @@ fun HomeScreen(
                     modifier = Modifier.weight(1f),
                 ) { Text("Settings") }
                 TextButton(
-                    onClick = { notYet("Score history") },
+                    onClick = onHistoryClicked,
                     modifier = Modifier.weight(1f),
                 ) { Text("History") }
             }
