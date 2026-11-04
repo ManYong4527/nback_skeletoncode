@@ -8,14 +8,15 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -34,10 +35,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import android.content.res.Configuration
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -90,6 +94,12 @@ fun GameScreen(
         )
     }
 
+    // SPEC advanced feature #3: responsive layout. Landscape reflows into
+    // a Row so the 1:1 grid can take the full vertical height on the left
+    // while live stats + match buttons stack on the right.
+    val isLandscape =
+        LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
+
     Scaffold { padding ->
         Column(
             modifier = Modifier
@@ -105,24 +115,56 @@ fun GameScreen(
                 TextButton(onClick = leaveScreen) { Text("← Back") }
             }
 
-            LiveStatsStrip(state = state, score = score, nBack = settings.nBack)
-            WarmupBanner(visible = state.isWarmup && state.isRoundActive)
-
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f),
-                contentAlignment = Alignment.Center,
-            ) {
-                VisualGrid(state = state, gridSize = settings.gridSize)
+            if (isLandscape) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight(),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        VisualGrid(state = state, gridSize = settings.gridSize)
+                    }
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight(),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        LiveStatsStrip(state = state, score = score, nBack = settings.nBack)
+                        WarmupBanner(visible = state.isWarmup && state.isRoundActive)
+                        Spacer(modifier = Modifier.weight(1f))
+                        BottomActionBar(
+                            state = state,
+                            onBegin = vm::startGame,
+                            onVisualMatch = vm::registerVisualMatch,
+                            onAudioMatch = vm::registerAudioMatch,
+                        )
+                    }
+                }
+            } else {
+                LiveStatsStrip(state = state, score = score, nBack = settings.nBack)
+                WarmupBanner(visible = state.isWarmup && state.isRoundActive)
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    VisualGrid(state = state, gridSize = settings.gridSize)
+                }
+                BottomActionBar(
+                    state = state,
+                    onBegin = vm::startGame,
+                    onVisualMatch = vm::registerVisualMatch,
+                    onAudioMatch = vm::registerAudioMatch,
+                )
             }
-
-            BottomActionBar(
-                state = state,
-                onBegin = vm::startGame,
-                onVisualMatch = vm::registerVisualMatch,
-                onAudioMatch = vm::registerAudioMatch,
-            )
         }
     }
 }
@@ -171,32 +213,42 @@ private fun WarmupBanner(visible: Boolean) {
     }
 }
 
-/** M×M grid, 1:1 aspect, highlights the cell whose index == current visualIndex. */
+/**
+ * M×M grid highlighting the cell whose index equals the current
+ * `visualIndex`. The outer wrapper sizes to `min(maxWidth, maxHeight)`
+ * so the grid stays a square inside its parent regardless of
+ * orientation — landscape used to clip the bottom when the Box was
+ * wider than tall and `aspectRatio(1f)` keyed off width.
+ */
 @Composable
 private fun VisualGrid(state: GameState, gridSize: Int) {
     val side = gridSize
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .aspectRatio(1f),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+    BoxWithConstraints(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center,
     ) {
-        for (row in 0 until side) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                for (col in 0 until side) {
-                    val index = row * side + col
-                    val lit = state.currentEvent?.visualIndex == index
-                    GridCell(
-                        isLit = lit,
-                        modifier = Modifier
-                            .fillMaxHeight()
-                            .weight(1f),
-                    )
+        val squareSide = minOf(maxWidth, maxHeight)
+        Column(
+            modifier = Modifier.size(squareSide),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            for (row in 0 until side) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    for (col in 0 until side) {
+                        val index = row * side + col
+                        val lit = state.currentEvent?.visualIndex == index
+                        GridCell(
+                            isLit = lit,
+                            modifier = Modifier
+                                .fillMaxHeight()
+                                .weight(1f),
+                        )
+                    }
                 }
             }
         }

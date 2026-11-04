@@ -1,14 +1,17 @@
 package mobappdev.example.nback_cimpl.ui.screens
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -60,13 +63,28 @@ fun HomeScreen(
     val settings by vm.settings.collectAsState()
 
     Scaffold { padding ->
-        Column(
+        // Tablet / landscape: cap content width and center so lines of
+        // text don't stretch edge-to-edge on wide screens (SPEC advanced
+        // feature #3, responsive layout).
+        Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
-                .padding(horizontal = 24.dp, vertical = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(20.dp),
+                .padding(padding),
+            contentAlignment = Alignment.TopCenter,
         ) {
+            Column(
+                // fillMaxWidth (not fillMaxSize) + verticalScroll so the
+                // button row below the picker stays reachable on short
+                // viewports (landscape phone). Anchoring START at the
+                // bottom via Spacer(weight) breaks under scroll — the
+                // button is now just below the picker, which is fine.
+                modifier = Modifier
+                    .widthIn(max = CONTENT_MAX_WIDTH)
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 24.dp, vertical = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(20.dp),
+            ) {
             Text(
                 text = "N-Back",
                 style = MaterialTheme.typography.displaySmall,
@@ -84,9 +102,6 @@ fun HomeScreen(
                 selected = gameState.gameType,
                 onPick = vm::setGameType,
             )
-
-            // Keep START anchored near the bottom even on tall screens.
-            Spacer(modifier = Modifier.weight(1f))
 
             Button(
                 onClick = onStartClicked,
@@ -110,9 +125,15 @@ fun HomeScreen(
                     modifier = Modifier.weight(1f),
                 ) { Text("History") }
             }
-        }
-    }
-}
+            }   // close Column
+        }       // close Box
+    }           // close Scaffold lambda
+}               // close fun HomeScreen
+
+// Max content width for wide-screen layouts (tablet / landscape).
+// Keeps cards, sliders and text blocks readable instead of stretching
+// edge-to-edge.
+private val CONTENT_MAX_WIDTH = 560.dp
 
 @Composable
 private fun HighScoreBanner(highscore: Int) {
