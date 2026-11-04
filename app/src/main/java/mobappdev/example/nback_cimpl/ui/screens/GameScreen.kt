@@ -48,6 +48,7 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import mobappdev.example.nback_cimpl.ui.viewmodels.FakeVM
 import mobappdev.example.nback_cimpl.ui.viewmodels.GameState
+import mobappdev.example.nback_cimpl.ui.viewmodels.GameType
 import mobappdev.example.nback_cimpl.ui.viewmodels.GameViewModel
 import mobappdev.example.nback_cimpl.ui.viewmodels.PendingSave
 
@@ -318,6 +319,8 @@ private fun BottomActionBar(
     }
 
     val inputsEnabled = !state.isWarmup
+    val visualActive = state.gameType != GameType.Audio
+    val audioActive = state.gameType != GameType.Visual
 
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -325,9 +328,9 @@ private fun BottomActionBar(
     ) {
         MatchButton(
             label = "AUDIO",
-            subtitle = "soon",
+            subtitle = null,
             pulseKey = state.audioFalseAlarmPulse,
-            enabled = false, // Path 1: audio deferred
+            enabled = inputsEnabled && audioActive,
             onClick = onAudioMatch,
             modifier = Modifier.weight(1f),
         )
@@ -335,7 +338,7 @@ private fun BottomActionBar(
             label = "VISUAL",
             subtitle = null,
             pulseKey = state.visualFalseAlarmPulse,
-            enabled = inputsEnabled,
+            enabled = inputsEnabled && visualActive,
             onClick = onVisualMatch,
             modifier = Modifier.weight(1f),
         )

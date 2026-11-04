@@ -30,6 +30,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import mobappdev.example.nback_cimpl.domain.AudioStatus
 import mobappdev.example.nback_cimpl.ui.viewmodels.FakeVM
 import mobappdev.example.nback_cimpl.ui.viewmodels.GameType
 import mobappdev.example.nback_cimpl.ui.viewmodels.GameViewModel
@@ -61,6 +62,7 @@ fun HomeScreen(
     val highscore by vm.highscore.collectAsState()
     val gameState by vm.gameState.collectAsState()
     val settings by vm.settings.collectAsState()
+    val audioStatus by vm.audioStatus.collectAsState()
 
     Scaffold { padding ->
         // Tablet / landscape: cap content width and center so lines of
@@ -100,6 +102,7 @@ fun HomeScreen(
 
             StimulusTypePicker(
                 selected = gameState.gameType,
+                audioStatus = audioStatus,
                 onPick = vm::setGameType,
             )
 
@@ -191,8 +194,14 @@ private fun SettingRow(name: String, value: String) {
 @Composable
 private fun StimulusTypePicker(
     selected: GameType,
+    audioStatus: AudioStatus,
     onPick: (GameType) -> Unit,
 ) {
+    // Audio chips only usable once the TTS engine reports Ready. Failed
+    // greys them out and shows the SPEC §3.3 fallback cue; Initializing
+    // just waits — the chips flip to enabled once init finishes.
+    val audioAvailable = audioStatus == AudioStatus.Ready
+
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("Stimulus type", style = MaterialTheme.typography.titleMedium)
         Row(
@@ -209,17 +218,30 @@ private fun StimulusTypePicker(
             StimulusChip(
                 label = "Audio",
                 selected = selected == GameType.Audio,
-                enabled = false, // SPEC Path 2: TTS pending.
+                enabled = audioAvailable,
                 onClick = { onPick(GameType.Audio) },
                 modifier = Modifier.weight(1f),
             )
             StimulusChip(
                 label = "Dual",
                 selected = selected == GameType.AudioVisual,
-                enabled = false, // SPEC Path 2.
+                enabled = audioAvailable,
                 onClick = { onPick(GameType.AudioVisual) },
                 modifier = Modifier.weight(1f),
             )
+        }
+        when (audioStatus) {
+            AudioStatus.Failed -> Text(
+                text = "Audio unavailable — the TTS engine or its English data is missing. Visual mode only.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+            )
+            AudioStatus.Initializing -> Text(
+                text = "Initialising speech engine…",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            AudioStatus.Ready -> Unit
         }
     }
 }

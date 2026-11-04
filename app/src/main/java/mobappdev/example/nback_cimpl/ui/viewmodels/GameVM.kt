@@ -17,6 +17,8 @@ import kotlinx.coroutines.launch
 import mobappdev.example.nback_cimpl.GameApplication
 import mobappdev.example.nback_cimpl.data.ScoreHistoryRepository
 import mobappdev.example.nback_cimpl.data.UserPreferencesRepository
+import mobappdev.example.nback_cimpl.domain.AudioOutput
+import mobappdev.example.nback_cimpl.domain.AudioStatus
 import mobappdev.example.nback_cimpl.domain.GameSettings
 import mobappdev.example.nback_cimpl.domain.ScoringEngine
 import mobappdev.example.nback_cimpl.domain.SequenceGenerator
@@ -46,6 +48,12 @@ interface GameViewModel {
      * the dialog; VM clears it once the player commits or dismisses.
      */
     val pendingSave: StateFlow<PendingSave?>
+    /**
+     * TTS engine lifecycle. UI reads this to grey out Audio / Dual
+     * chips when [AudioStatus.Failed] (SPEC §3.3 fallback cue); the VM
+     * uses it to refuse starting an audio-bearing round.
+     */
+    val audioStatus: StateFlow<AudioStatus>
 
     fun setGameType(gameType: GameType)
     fun startGame()
@@ -71,6 +79,7 @@ data class PendingSave(val score: Int, val nValue: Int)
 class GameVM(
     private val userPreferencesRepository: UserPreferencesRepository,
     private val scoreHistoryRepository: ScoreHistoryRepository,
+    private val audioOutput: AudioOutput,
 ) : GameViewModel, ViewModel() {
 
     private val _gameState = MutableStateFlow(GameState())
@@ -88,6 +97,8 @@ class GameVM(
     private val _pendingSave = MutableStateFlow<PendingSave?>(null)
     override val pendingSave: StateFlow<PendingSave?> = _pendingSave.asStateFlow()
 
+    override val audioStatus: StateFlow<AudioStatus> get() = audioOutput.status
+
     /**
      * Snapshot of [settings] captured at [startGame]. Mutating settings
      * mid-round does NOT retune the loop; the next round uses the newer
@@ -104,6 +115,13 @@ class GameVM(
     private val tapGuard = TickTapGuard()
 
     override fun setGameType(gameType: GameType) {
+        val requiresAudio = gameType != GameType.Visual
+        if (requiresAudio && audioOutput.status.value == AudioStatus.Failed) {
+            // SPEC §3.3 fallback: engine/language unavailable → stay on
+            // Visual. UI reads audioStatus to show the user why.
+            _gameState.update { it.copy(gameType = GameType.Visual) }
+            return
+        }
         _gameState.update { it.copy(gameType = gameType) }
     }
 
@@ -111,10 +129,10 @@ class GameVM(
         loopJob?.cancel()
 
         val type = _gameState.value.gameType
-        if (type != GameType.Visual) {
-            Log.w(TAG, "GameType $type not yet implemented; aborting start")
-            _gameState.update { it.copy(isRoundActive = false) }
-            return
+        if (type != GameType.Visual && audioOutput.status.value == AudioStatus.Failed) {
+            // Belt-and-braces: if audio became Failed between setGameType
+            // and startGame, fall back to Visual so the user can still play.
+            _gameState.update { it.copy(gameType = GameType.Visual) }
         }
 
         // Freeze the player's current settings for the duration of this
@@ -145,7 +163,7 @@ class GameVM(
         }
         _score.value = 0
 
-        loopJob = viewModelScope.launch { runVisualRound() }
+        loopJob = viewModelScope.launch { runRound() }
     }
 
     override fun saveSettings(settings: GameSettings) {
@@ -157,6 +175,7 @@ class GameVM(
     override fun registerVisualMatch() {
         val state = _gameState.value
         if (!state.isRoundActive || state.isWarmup) return
+        if (state.gameType == GameType.Audio) return // visual modality off this round
         if (!tapGuard.acceptVisual()) return
 
         val n = activeSettings.nBack
@@ -178,11 +197,27 @@ class GameVM(
     }
 
     override fun registerAudioMatch() {
-        // Path 1: auditory playback isn't wired yet. We still enforce the
-        // same guards so UI callers behave identically once audio lands.
         val state = _gameState.value
         if (!state.isRoundActive || state.isWarmup) return
+        if (state.gameType == GameType.Visual) return // audio modality off this round
         if (!tapGuard.acceptAudio()) return
+
+        val n = activeSettings.nBack
+        val i = state.roundIndex
+        if (i < n) return
+
+        val isMatch = events[i].letter == events[i - n].letter
+        if (isMatch) {
+            _gameState.update { it.copy(hits = it.hits + 1) }
+        } else {
+            _gameState.update {
+                it.copy(
+                    falseAlarms = it.falseAlarms + 1,
+                    audioFalseAlarmPulse = it.audioFalseAlarmPulse + 1,
+                )
+            }
+        }
+        recomputeScore()
     }
 
     /**
@@ -210,11 +245,14 @@ class GameVM(
         loopJob?.cancel()
     }
 
-    private suspend fun runVisualRound() {
+    private suspend fun runRound() {
         val tickMs = activeSettings.eventDurationMs
         val n = activeSettings.nBack
         val visibleMs = (tickMs * STIMULUS_VISIBLE_FRACTION).toLong()
         val gapMs = tickMs - visibleMs
+        val type = _gameState.value.gameType
+        val visualOn = type != GameType.Audio
+        val audioOn = type != GameType.Visual
 
         for (i in events.indices) {
             tapGuard.resetForNewTick()
@@ -226,16 +264,27 @@ class GameVM(
                     isWarmup = i < n,
                 )
             }
+            if (audioOn) audioOutput.speak(events[i].letter)
             delay(visibleMs)
 
             _gameState.update { it.copy(currentEvent = null) }
 
             // SPEC §2.1 "Misses": a real match the user never registered.
+            // Each active modality counts its own miss independently.
             if (i >= n) {
-                val wasVisualMatch =
-                    events[i].visualIndex == events[i - n].visualIndex
-                if (wasVisualMatch && !tapGuard.visualWasTapped) {
-                    _gameState.update { it.copy(misses = it.misses + 1) }
+                if (visualOn) {
+                    val wasVisualMatch =
+                        events[i].visualIndex == events[i - n].visualIndex
+                    if (wasVisualMatch && !tapGuard.visualWasTapped) {
+                        _gameState.update { it.copy(misses = it.misses + 1) }
+                    }
+                }
+                if (audioOn) {
+                    val wasAudioMatch =
+                        events[i].letter == events[i - n].letter
+                    if (wasAudioMatch && !tapGuard.audioWasTapped) {
+                        _gameState.update { it.copy(misses = it.misses + 1) }
+                    }
                 }
             }
             delay(gapMs)
@@ -292,6 +341,7 @@ class GameVM(
                 GameVM(
                     userPreferencesRepository = application.userPreferencesRespository,
                     scoreHistoryRepository = application.scoreHistoryRepository,
+                    audioOutput = application.audioOutput,
                 )
             }
         }
@@ -351,6 +401,8 @@ class FakeVM : GameViewModel {
         MutableStateFlow(GameSettings()).asStateFlow()
     override val pendingSave: StateFlow<PendingSave?> =
         MutableStateFlow<PendingSave?>(null).asStateFlow()
+    override val audioStatus: StateFlow<AudioStatus> =
+        MutableStateFlow(AudioStatus.Ready).asStateFlow()
     override fun setGameType(gameType: GameType) {}
     override fun startGame() {}
     override fun abortRound() {}

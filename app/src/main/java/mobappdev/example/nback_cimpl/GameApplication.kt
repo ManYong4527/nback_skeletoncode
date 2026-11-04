@@ -6,8 +6,10 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.preferencesDataStore
 import mobappdev.example.nback_cimpl.data.AppDatabase
+import mobappdev.example.nback_cimpl.data.AudioPlayer
 import mobappdev.example.nback_cimpl.data.ScoreHistoryRepository
 import mobappdev.example.nback_cimpl.data.UserPreferencesRepository
+import mobappdev.example.nback_cimpl.domain.AudioOutput
 
 /**
  * Manual DI root.
@@ -24,6 +26,7 @@ private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(
 class GameApplication : Application() {
     lateinit var userPreferencesRespository: UserPreferencesRepository
     lateinit var scoreHistoryRepository: ScoreHistoryRepository
+    lateinit var audioOutput: AudioOutput
 
     override fun onCreate() {
         super.onCreate()
@@ -31,5 +34,6 @@ class GameApplication : Application() {
         scoreHistoryRepository = ScoreHistoryRepository(
             AppDatabase.get(this).scoreDao()
         )
+        audioOutput = AudioPlayer(this)
     }
 }
