@@ -3,10 +3,6 @@ package mobappdev.example.nback_cimpl.domain
 /**
  * Immutable snapshot of the player-configurable round parameters.
  *
- * SPEC §3.1 pins the legal ranges; the companion object holds them as
- * `IntRange` constants so both the DataStore reader (clamp on load) and
- * the Settings screen (slider bounds) draw from one source of truth.
- *
  * Defaults (nBack=2, 2000ms, 20 events, 3×3, 7 letters) match the
  * Path 1 hard-coded constants so existing round behaviour is preserved
  * before the user ever opens Settings.

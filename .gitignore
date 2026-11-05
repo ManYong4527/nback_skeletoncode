@@ -12,3 +12,6 @@
 
 # IntelliJ / Android Studio project files — per-user, regenerated on sync.
 .idea/
+
+# Local project documents, not part of the source tree.
+/Docs/
